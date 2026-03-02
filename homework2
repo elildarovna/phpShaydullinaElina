@@ -1,0 +1,109 @@
+<?php
+$catalog = [
+    ['id' => 1, 'title' => 'Книга "PHP для начинающих"', 'cost' => 500, 'categories' => ['php', 'книга', 'программирование']],
+    ['id' => 2, 'title' => 'Ноутбук Dell', 'cost' => 45000, 'categories' => ['ноутбук', 'dell', 'электроника']],
+    ['id' => 3, 'title' => 'Мышь беспроводная', 'cost' => 1500, 'categories' => ['мышь', 'беспроводная', 'электроника']],
+    ['id' => 4, 'title' => 'Клавиатура механическая', 'cost' => 3500, 'categories' => ['клавиатура', 'механическая', 'электроника']],
+    ['id' => 5, 'title' => 'Монитор 24"', 'cost' => 12000, 'categories' => ['монитор', '24', 'электроника']],
+    ['id' => 6, 'title' => 'Наушники Sony', 'cost' => 5000, 'categories' => ['наушники', 'sony', 'аудио']],
+    ['id' => 7, 'title' => 'Книга "JavaScript для детей"', 'cost' => 800, 'categories' => ['js', 'книга', 'программирование']],
+    ['id' => 8, 'title' => 'Внешний диск 1TB', 'cost' => 4000, 'categories' => ['диск', 'hdd', 'хранилище']],
+    ['id' => 9, 'title' => 'Коврик для мыши', 'cost' => 300, 'categories' => ['коврик', 'аксессуар']],
+    ['id' => 10, 'title' => 'Книга "Изучаем SQL"', 'cost' => 600, 'categories' => ['sql', 'книга', 'базы данных']],
+    ['id' => 11, 'title' => 'Микрофон USB', 'cost' => 2500, 'categories' => ['микрофон', 'usb', 'аудио']],
+    ['id' => 12, 'title' => 'Книга "HTML и CSS"', 'cost' => 450, 'categories' => ['html', 'css', 'книга']],
+    ['id' => 13, 'title' => 'SSD диск 256GB', 'cost' => 3500, 'categories' => ['ssd', 'диск', 'хранилище']],
+    ['id' => 14, 'title' => 'Веб-камера HD', 'cost' => 1800, 'categories' => ['камера', 'веб', 'электроника']],
+    ['id' => 15, 'title' => 'Книга "Python для начинающих"', 'cost' => 550, 'categories' => ['python', 'книга', 'программирование']],
+];
+
+$searchText = $_REQUEST['q'] ?? '';
+$priceFrom = isset($_REQUEST['from']) ? (float)$_REQUEST['from'] : 0;
+$priceTo = isset($_REQUEST['to']) ? (float)$_REQUEST['to'] : 1000000;
+$orderBy = $_REQUEST['order'] ?? 'title';
+$orderDir = $_REQUEST['direction'] ?? 'asc';
+$currentPage = isset($_REQUEST['p']) ? (int)$_REQUEST['p'] : 1;
+$itemsPerPage = isset($_REQUEST['limit']) ? (int)$_REQUEST['limit'] : 5;
+
+$filtered = [];
+foreach ($catalog as $item) {
+    if ($searchText !== '' && stripos($item['title'], $searchText) === false) {        continue;
+    }
+    if ($item['cost'] < $priceFrom || $item['cost'] > $priceTo) {
+        continue;
+    }
+    $filtered[] = $item;
+}
+
+usort($filtered, function($x, $y) use ($orderBy, $orderDir) {
+    if ($orderBy === 'cost') {
+        $comparison = $x['cost'] <=> $y['cost'];
+    } else {
+        $comparison = strcasecmp($x['title'], $y['title']);
+    }
+    return $orderDir === 'desc' ? -$comparison : $comparison;
+});
+
+$totalCount = count($filtered);
+$totalPagesCount = $totalCount > 0 ? ceil($totalCount / $itemsPerPage) : 1;
+$currentPage = max(1, min($currentPage, $totalPagesCount));
+$startFrom = ($currentPage - 1) * $itemsPerPage;
+$itemsOnPage = array_slice($filtered, $startFrom, $itemsPerPage);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Магазин товаров</title>
+</head>
+<body>
+<div class="filter-panel">
+    <h3>Настройки фильтрации</h3>
+    <p>
+        Поиск: <strong><?php echo htmlspecialchars($searchText ?: 'не задан'); ?></strong> |
+        Цена: от <strong><?php echo $priceFrom ?: '0'; ?></strong> до <strong><?php echo $priceTo < 1000000 ? $priceTo : '∞'; ?></strong> |
+        Сортировка: <strong><?php echo $orderBy == 'cost' ? 'по цене' : 'по названию'; ?></strong> (<strong><?php echo $orderDir == 'asc' ? 'возрастание' : 'убывание'; ?></strong>) |
+        Страница: <strong><?php echo $currentPage; ?></strong> из <strong><?php echo $totalPagesCount; ?></strong> |
+        На странице: <strong><?php echo $itemsPerPage; ?></strong>
+    </p>
+</div>
+
+<h2>Найдено товаров: <?php echo $totalCount; ?>, показано: <?php echo count($itemsOnPage); ?></h2>
+
+<?php if (empty($itemsOnPage)): ?>
+    <p>Товары не найдены. Попробуйте изменить параметры поиска.</p>
+<?php else: ?>
+    <?php foreach ($itemsOnPage as $product): ?>
+        <div class="product-card">
+            <h3 class="product-title"><?php echo htmlspecialchars($product['title']); ?></h3>
+            <p class="product-price"><?php echo $product['cost']; ?> руб.</p>
+            <p class="product-tags"><?php echo htmlspecialchars(implode(' • ', $product['categories'])); ?></p>
+        </div>
+    <?php endforeach; ?>
+
+    <div class="pagination">
+        <p>Страница <?php echo $currentPage; ?> из <?php echo $totalPagesCount; ?></p>
+        <div>
+            <?php if ($currentPage > 1): ?>
+                <a href="?<?php echo http_build_query(array_merge($_REQUEST, ['p' => 1])); ?>">Первая</a>
+                <a href="?<?php echo http_build_query(array_merge($_REQUEST, ['p' => $currentPage - 1])); ?>">Предыдущая</a>
+            <?php endif; ?>
+
+            <?php for ($num = max(1, $currentPage - 2); $num <= min($totalPagesCount, $currentPage + 2); $num++): ?>
+                <?php if ($num == $currentPage): ?>
+                    <span class="current"><?php echo $num; ?></span>
+                <?php else: ?>
+                    <a href="?<?php echo http_build_query(array_merge($_REQUEST, ['p' => $num])); ?>"><?php echo $num; ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($currentPage < $totalPagesCount): ?>
+                <a href="?<?php echo http_build_query(array_merge($_REQUEST, ['p' => $currentPage + 1])); ?>">Следующая</a>
+                <a href="?<?php echo http_build_query(array_merge($_REQUEST, ['p' => $totalPagesCount])); ?>">Последняя</a>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endif; ?>
+
+</body>
+</html>
