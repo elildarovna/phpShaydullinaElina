@@ -1,0 +1,180 @@
+<?php
+session_start();
+
+class TaskManager {
+    private $tasks = [];
+
+    public function __construct() {
+        $this->tasks = &$_SESSION['tasks'];
+        if (!isset($_SESSION['tasks'])) {
+            $_SESSION['tasks'] = [];
+        }
+        if (!isset($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+    }
+
+    public function run() {
+        $method = $_SERVER['REQUEST_METHOD'];
+        $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+        if ($method === 'GET' && ($path === '/' || $path === '/tasks.php')) {
+            $this->showList();
+        }
+        elseif ($method === 'GET' && strpos($path, '/edit') !== false) {
+            $this->showForm();
+        }
+        elseif ($method === 'POST') {
+            $this->handleForm();
+        }
+        else {
+            echo "404 Not Found";
+        }
+    }
+
+    private function showList() {
+        $flash = $_SESSION['flash'] ?? null;
+        unset($_SESSION['flash']);
+        ?>
+        <h1>Список задач</h1>
+
+        <?php if ($flash): ?>
+            <p><strong><?= $flash['type'] ?>:</strong> <?= $flash['message'] ?></p>
+        <?php endif; ?>
+
+        <a href="/edit">Создать задачу</a>
+        <hr>
+
+        <?php if (empty($this->tasks)): ?>
+            <p>Нет задач</p>
+        <?php else: ?>
+            <?php foreach ($this->tasks as $id => $task): ?>
+                <div>
+                    <h3><?= htmlspecialchars($task['title']) ?></h3>
+                    <p><?= htmlspecialchars($task['description']) ?></p>
+                    <?php if ($task['file']): ?>
+                        <p>Файл: <a href="<?= $task['file'] ?>">скачать</a></p>
+                    <?php endif; ?>
+                    <a href="/edit?id=<?= $id ?>">Редактировать</a>
+                </div>
+                <hr>
+            <?php endforeach; ?>
+        <?php endif; ?>
+        <?php
+    }
+
+    private function showForm() {
+        $id = $_GET['id'] ?? null;
+        $task = null;
+
+        if ($id !== null && isset($this->tasks[$id])) {
+            $task = $this->tasks[$id];
+        }
+
+        $flash = $_SESSION['flash'] ?? null;
+        unset($_SESSION['flash']);
+        ?>
+        <h1><?= $task ? 'Редактировать' : 'Создать' ?> задачу</h1>
+        <form action="/tasks.php" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+            <p>
+                Заголовок:<br>
+                <input type="text" name="title" required value="<?= htmlspecialchars($task['title'] ?? '') ?>">
+            </p>
+
+            <p>
+                Описание:<br>
+                <textarea name="description" required><?= htmlspecialchars($task['description'] ?? '') ?></textarea>
+            </p>
+
+            <p>
+                Файл (картинка):<br>
+                <input type="file" name="file" accept="image/*">
+                <?php if ($task && $task['file']): ?>
+                    <br>Текущий файл: <a href="<?= $task['file'] ?>">просмотр</a>
+                <?php endif; ?>
+            </p>
+
+            <button type="submit">Сохранить</button>
+            <a href="/"><button type="button">Отмена</button></a>
+        </form>
+        <?php
+    }
+
+    private function handleForm() {
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => 'Ошибка безопасности'];
+            header('Location: /edit' . (isset($_POST['id']) ? '?id=' . $_POST['id'] : ''));
+            exit;
+        }
+
+        $id = $_POST['id'] ?? null;
+        $title = trim($_POST['title'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $file = $_FILES['file'] ?? null;
+
+        $errors = [];
+
+        if (strlen($title) < 3) {
+            $errors[] = 'Заголовок должен быть минимум 3 символа';
+        }
+
+        if (strlen($description) < 3) {
+            $errors[] = 'Описание должно быть минимум 3 символа';
+        }
+
+        if ($file && $file['error'] === UPLOAD_ERR_OK) {
+            if ($file['size'] > 5 * 1024 * 1024) {
+                $errors[] = 'Файл не должен превышать 5MB';
+            }
+
+            $imageTypes = ['image/jpeg', 'image/png', 'image/gif'];
+            if (!in_array($file['type'], $imageTypes)) {
+                $errors[] = 'Можно загружать только картинки (JPG, PNG, GIF)';
+            }
+        }
+
+        if (!empty($errors)) {
+            $_SESSION['flash'] = ['type' => 'error', 'message' => implode(', ', $errors)];
+            header('Location: /edit' . ($id !== null ? '?id=' . $id : ''));
+            exit;
+        }
+
+        $filePath = null;
+        if ($file && $file['error'] === UPLOAD_ERR_OK) {
+            if (!is_dir('uploads')) {
+                mkdir('uploads');
+            }
+
+            $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+            $filename = uniqid() . '.' . $ext;
+            $filePath = 'uploads/' . $filename;
+            move_uploaded_file($file['tmp_name'], $filePath);
+        }
+
+        $taskData = [
+            'title' => $title,
+            'description' => $description,
+            'file' => $filePath
+        ];
+
+        if ($id !== null && isset($this->tasks[$id])) {
+            if (!$filePath && $this->tasks[$id]['file']) {
+                $taskData['file'] = $this->tasks[$id]['file'];
+            }
+            $this->tasks[$id] = $taskData;
+            $_SESSION['flash'] = ['type' => 'success', 'message' => 'Задача обновлена'];
+        } else {
+            $this->tasks[] = $taskData;
+            $_SESSION['flash'] = ['type' => 'success', 'message' => 'Задача создана'];
+        }
+
+        header('Location: /');
+        exit;
+    }
+}
+
+$app = new TaskManager();
+$app->run();
